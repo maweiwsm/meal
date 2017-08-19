@@ -1,0 +1,14 @@
+#top-nav .navbar-nav a {
+  color: blanchedalmond;
+}
+#top-nav .navbar-nav a:hover,
+#top-nav .navbar-nav .active a {
+  color: white;
+}
+#top-nav .dropdown-menu,
+#top-nav .dropdown-menu li a:hover {
+  background: black;
+}
+#wrap > .container {
+  padding: 60px 15px;
+}
