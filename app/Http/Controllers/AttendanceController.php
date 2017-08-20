@@ -120,12 +120,12 @@ class AttendanceController extends Controller
                     }
                 }
             }
-            foreach ($employees as $attendanceID => $employee) {
+            foreach ($employees as $attendanceID => &$employee) {
                 // 当月考勤
                 $dateRecords = $attendanceRecords[$attendanceID];
                 ksort($dateRecords);
 
-                if ($attendanceID == 149) {
+                if ($attendanceID) {
                     foreach ($dateRecords as $date => $dateObj) {
                         $time = $dateObj->format('H:i');
                         // echo($time . '|' . $date . '<br>');
@@ -138,12 +138,12 @@ class AttendanceController extends Controller
                         }
                     }
                     // dd($dateRecords);
-                    dd($employee);
+                    // dd($employee);
                 }
 
                 $employee['attendanceRecords'] = '';
             }
-            dd($attendanceRecords);
+            // dd($attendanceRecords);
             dd($employees);
             // $reader->each(function($sheet) use (&$attendance) {
             //     $sheet->each(function($row) use (&$attendance) {
