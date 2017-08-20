@@ -29,7 +29,7 @@ class ExcelController extends Controller
 
     //Excel文件导入功能 By Laravel学院
     public function import(){
-        $filePath = 'storage/exports/'.iconv('UTF-8', 'GBK', 'student').'.xlsx';
+        $filePath = 'storage/exports/a.xls';
         Excel::load($filePath, function($reader) {
             $data = $reader->all();
             dd($data);

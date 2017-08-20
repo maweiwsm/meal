@@ -16,10 +16,17 @@
                     </a>
                 </li>
                 <li {!! (Request::is('order') ? 'class="active"' : '') !!}>
-                    <a href="/order">
+                    <a href="{{ route('order.index') }}">
                         <i class="glyphicon glyphicon-cutlery"></i> 饿单
                     </a>
                 </li>
+
+                <li {!! (Request::is('attendance') ? 'class="active"' : '') !!}>
+                    <a href="{{ route('attendance.index') }}">
+                        <i class="glyphicon glyphicon-hand-up"></i> 考勤
+                    </a>
+                </li>
+
                 <li {!! (Request::is('orders') ? 'class="active"' : '') !!}>
                     <a href="/order">
                         <i class="glyphicon glyphicon-stats"></i> 统计

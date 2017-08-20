@@ -58,7 +58,9 @@ Route::get('/', function () {
 });
 
 Route::get('/home', 'HomeController@index')->name('home');
-Route::resource('/order', 'OrderController');
+Route::resource('order', 'OrderController');
+Route::get('attendance/import','AttendanceController@import');
+Route::resource('attendance', 'AttendanceController');
 
 Route::get('excel/export','ExcelController@export');
 Route::get('excel/import','ExcelController@import');
