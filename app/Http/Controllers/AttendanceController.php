@@ -121,27 +121,75 @@ class AttendanceController extends Controller
                 }
             }
             foreach ($employees as $attendanceID => &$employee) {
-                // 当月考勤
-                $dateRecords = $attendanceRecords[$attendanceID];
-                ksort($dateRecords);
+                // 个人考勤汇总
+                $singlePersonRecords = $attendanceRecords[$attendanceID];
+                ksort($singlePersonRecords);
 
-                if ($attendanceID) {
-                    foreach ($dateRecords as $date => $dateObj) {
-                        $time = $dateObj->format('H:i');
-                        // echo($time . '|' . $date . '<br>');
+                $allDayRecords = [];
+                $attendanceSummary = [];
+                if ($attendanceID == 103) {
+                    foreach ($singlePersonRecords as $thatDay => $thatDayObj) {
+                        $time = $thatDayObj->format('H:i');
+                        // echo($time . '|' . $thatDay . '<br>');
                         if ($time >= '06:00' && $time <= '10:30') {
-                            $employee[$dateObj->toDateString()]['mornings'][] = $date;
+                            $allDayRecords[$thatDayObj->toDateString()]['morning'][] = $thatDay;
                         } elseif ($time >= '17:30' && $time <= '23:59') {
-                            $employee[$dateObj->toDateString()]['evenings'][] = $date;
+                            $allDayRecords[$thatDayObj->toDateString()]['evening'][] = $thatDay;
                         } elseif ($time >= '00:00' && $time < '06:00') {
-                            $employee[$dateObj->subDay()->toDateString()]['evenings'][] = $date;
+                            $allDayRecords[$thatDayObj->subDay()->toDateString()]['evening'][] = $thatDay;
                         }
                     }
-                    // dd($dateRecords);
-                    // dd($employee);
+
+                    $freeLateTimes = 3;
+                    $attendanceSummary['overtime_after_eight'] = 0;
+
+                    foreach ($allDayRecords as $thatDay => $thatDayRecords) {
+                        // 先统计未打卡情况
+                        if (empty($thatDayRecords['morning']) && empty($thatDayRecords['evening'])) {
+                            // 全天未打卡
+                            $attendanceSummary['no_record_all_day'][] = $thatDay;
+                        } elseif (empty($thatDayRecords['morning']) && !empty($thatDayRecords['evening'])) {
+                            // 早上未打卡
+                            $attendanceSummary['no_record_all_morning'][] = $thatDay;
+                        } elseif (!empty($thatDayRecords['morning']) && empty($thatDayRecords['evening'])) {
+                            // 晚上未打卡
+                            $attendanceSummary['no_record_all_evening'][] = $thatDay;
+                        }
+                        // 再统计迟到情况
+                        if (!empty($thatDayRecords['morning'])) {
+                            $earliestSignDateTime = min($thatDayRecords['morning']);
+                            $earliestSignObj = Carbon::parse($earliestSignDateTime);
+                            $earliestSignTime = $earliestSignObj->format('H:i');
+                            $dayBefore = $earliestSignObj->subDay()->toDateString();
+                            $dayBeforeEveningSignTime = '';
+                            if (!empty($allDayRecords[$dayBefore]['evening'])) {
+                                // 进入前一天加班迟到判断
+                                $dayBeforeEveningSignTime = Carbon::parse(max($allDayRecords[$dayBefore]['evening']))->format('H:i');
+                            }
+
+                            if ($earliestSignTime > '09:00') {
+                                $attendanceSummary['late_in_morning'][] = $thatDay;
+                            }
+
+                            if ($freeLateTimes > 0) {
+
+                            }
+                        }
+                        // 加班统计overtime
+                        if (!empty($thatDayRecords['evening'])) {
+                            $latestSignDateTime = max($thatDayRecords['evening']);
+                            $latestSignObj = Carbon::parse($latestSignDateTime);
+                            $latestSignTime = $latestSignObj->format('H:i');
+                            if ($latestSignTime >= '20:00' || $latestSignTime < '06:00') {
+                                $attendanceSummary['overtime_after_eight']++;
+                            }
+                        }
+                    }
+//                    dd($allDayRecords);
+                    dd($attendanceSummary);
                 }
 
-                $employee['attendanceRecords'] = '';
+                $employee['attendanceSummary'] = $attendanceSummary;
             }
             // dd($attendanceRecords);
             dd($employees);
