@@ -93,10 +93,12 @@ class AttendanceController extends Controller
     public function import(){
         $filePath = 'storage/app/public/attendance/2017/5月原始考勤数据.xlsx';
 
-
-// dd(Carbon::parse('2017/8/13 23:35:45')->subDay()->toDateString());
-// dd(Carbon::parse('2017/8/20 23:35:45')->dayOfWeek);
-// dd(Carbon::parse('2017/8/20 23:35:45')->format('i:s'));
+//$d1 = Carbon::parse('2017/8/23 19:30:00');
+//$d2 = Carbon::parse('2017/8/23 20:25:00');
+//dd(intval(round($d1->diffInMinutes($d2)/30))*0.5);
+//dd(Carbon::parse('2017/8/23 23:35:45')->subDay()->toDateString());
+//dd(Carbon::parse('2017/8/20 23:35:45')->dayOfWeek);
+//dd(Carbon::parse('2017/8/20 23:35:45')->format('i:s'));
 
         Excel::load($filePath, function($reader) {
             // 考勤数据
@@ -127,20 +129,24 @@ class AttendanceController extends Controller
 
                 $allDayRecords = [];
                 $attendanceSummary = [];
-                if ($attendanceID == 103) {
+                if ($attendanceID == 149) {
                     foreach ($singlePersonRecords as $thatDay => $thatDayObj) {
-                        $time = $thatDayObj->format('H:i');
-                        // echo($time . '|' . $thatDay . '<br>');
-                        if ($time >= '06:00' && $time <= '10:30') {
-                            $allDayRecords[$thatDayObj->toDateString()]['morning'][] = $thatDay;
-                        } elseif ($time >= '17:30' && $time <= '23:59') {
-                            $allDayRecords[$thatDayObj->toDateString()]['evening'][] = $thatDay;
-                        } elseif ($time >= '00:00' && $time < '06:00') {
-                            $allDayRecords[$thatDayObj->subDay()->toDateString()]['evening'][] = $thatDay;
+                        $thatDayTime = $thatDayObj->format('H:i');
+                        $thatDayDateTime = $thatDayObj->toDateTimeString();
+                        // echo($thatDayTime . '|' . $thatDay . '<br>');
+                        if ($thatDayTime >= '06:00' && $thatDayTime <= '10:30') {
+                            $allDayRecords[$thatDayObj->toDateString()]['morning'][] = $thatDayDateTime;
+                        } elseif ($thatDayTime >= '17:30' && $thatDayTime <= '23:59') {
+                            $allDayRecords[$thatDayObj->toDateString()]['evening'][] = $thatDayDateTime;
+                        } elseif ($thatDayTime >= '00:00' && $thatDayTime < '06:00') {
+                            $allDayRecords[$thatDayObj->subDay()->toDateString()]['evening'][] = $thatDayDateTime;
                         }
                     }
 
                     $freeLateTimes = 3;
+                    // 加班时间总计
+                    $attendanceSummary['overtime_total'] = 0;
+                    // 晚上8点后加班次数
                     $attendanceSummary['overtime_after_eight'] = 0;
 
                     foreach ($allDayRecords as $thatDay => $thatDayRecords) {
@@ -161,18 +167,37 @@ class AttendanceController extends Controller
                             $earliestSignObj = Carbon::parse($earliestSignDateTime);
                             $earliestSignTime = $earliestSignObj->format('H:i');
                             $dayBefore = $earliestSignObj->subDay()->toDateString();
-                            $dayBeforeEveningSignTime = '';
+                            $dayBeforeEveningSignTime = '17:30';
                             if (!empty($allDayRecords[$dayBefore]['evening'])) {
                                 // 进入前一天加班迟到判断
                                 $dayBeforeEveningSignTime = Carbon::parse(max($allDayRecords[$dayBefore]['evening']))->format('H:i');
                             }
-
-                            if ($earliestSignTime > '09:00') {
-                                $attendanceSummary['late_in_morning'][] = $thatDay;
-                            }
-
-                            if ($freeLateTimes > 0) {
-
+                            // 晚上21点之前下班不能迟到
+                            if ($dayBeforeEveningSignTime >= '17:30' && $dayBeforeEveningSignTime < '21:00') {
+                                if ($earliestSignTime > '09:00') {
+                                    if ($earliestSignTime <= '09:10') {
+                                        if ($freeLateTimes > 0) {
+                                            // 免费机会如果没用完则抵消一次
+                                            $freeLateTimes--;
+                                        } else {
+                                            // 免费机会用完则算迟到
+                                            $attendanceSummary['late_in_morning'][] = $earliestSignDateTime;
+                                        }
+                                    } else {
+                                        // 超过10分钟直接算迟到
+                                        $attendanceSummary['late_in_morning'][] = $earliestSignDateTime;
+                                    }
+                                }
+                            } elseif ($dayBeforeEveningSignTime >= '21:00' && $dayBeforeEveningSignTime < '22:00') {
+                                // 加班到晚上22点之前，次日9点半之前不算迟到
+                                if ($earliestSignTime > '09:30') {
+                                    $attendanceSummary['late_in_morning'][] = $earliestSignDateTime;
+                                }
+                            } elseif ($dayBeforeEveningSignTime >= '22:00' && $dayBeforeEveningSignTime <= '23:59') {
+                                // 加班到晚上0点之前，次日10点之前不算迟到
+                                if ($earliestSignTime > '10:00') {
+                                    $attendanceSummary['late_in_morning'][] = $earliestSignDateTime;
+                                }
                             }
                         }
                         // 加班统计overtime
@@ -180,6 +205,14 @@ class AttendanceController extends Controller
                             $latestSignDateTime = max($thatDayRecords['evening']);
                             $latestSignObj = Carbon::parse($latestSignDateTime);
                             $latestSignTime = $latestSignObj->format('H:i');
+                            // 晚上加班19:30开始统计，起步1小时，之后以半小时为单位统计
+                            if ($latestSignTime >= '19:30' || $latestSignTime < '06:00') {
+                                // 保底1小时
+                                // 计算增量时长
+                                $overtimeBaseObj = Carbon::parse($thatDay . ' 19:30:00');
+                                $deltaHours = round($latestSignObj->diffInMinutes($overtimeBaseObj)/30)*0.5;
+                                $attendanceSummary['overtime_total'] += 1 + $deltaHours;
+                            }
                             if ($latestSignTime >= '20:00' || $latestSignTime < '06:00') {
                                 $attendanceSummary['overtime_after_eight']++;
                             }
