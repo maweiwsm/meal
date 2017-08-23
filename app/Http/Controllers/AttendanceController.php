@@ -122,6 +122,9 @@ class AttendanceController extends Controller
                     }
                 }
             }
+
+            $cellData[] = ['部门', '姓名', '迟到', '早退', '病假', '事假', '旷工', '婚假', '产假/陪产假', '年休假', '丧假', '调休', '公假', '出勤', '员工签字', '备注'];
+
             foreach ($employees as $attendanceID => &$employee) {
                 // 个人考勤汇总
                 $singlePersonRecords = $attendanceRecords[$attendanceID];
@@ -129,103 +132,136 @@ class AttendanceController extends Controller
 
                 $allDayRecords = [];
                 $attendanceSummary = [];
-                if ($attendanceID == 149) {
-                    foreach ($singlePersonRecords as $thatDay => $thatDayObj) {
-                        $thatDayTime = $thatDayObj->format('H:i');
-                        $thatDayDateTime = $thatDayObj->toDateTimeString();
-                        // echo($thatDayTime . '|' . $thatDay . '<br>');
-                        if ($thatDayTime >= '06:00' && $thatDayTime <= '10:30') {
-                            $allDayRecords[$thatDayObj->toDateString()]['morning'][] = $thatDayDateTime;
-                        } elseif ($thatDayTime >= '17:30' && $thatDayTime <= '23:59') {
-                            $allDayRecords[$thatDayObj->toDateString()]['evening'][] = $thatDayDateTime;
-                        } elseif ($thatDayTime >= '00:00' && $thatDayTime < '06:00') {
-                            $allDayRecords[$thatDayObj->subDay()->toDateString()]['evening'][] = $thatDayDateTime;
-                        }
-                    }
+                $attendanceSummary['late_in_morning'] = [];
 
-                    $freeLateTimes = 3;
-                    // 加班时间总计
-                    $attendanceSummary['overtime_total'] = 0;
-                    // 晚上8点后加班次数
-                    $attendanceSummary['overtime_after_eight'] = 0;
-
-                    foreach ($allDayRecords as $thatDay => $thatDayRecords) {
-                        // 先统计未打卡情况
-                        if (empty($thatDayRecords['morning']) && empty($thatDayRecords['evening'])) {
-                            // 全天未打卡
-                            $attendanceSummary['no_record_all_day'][] = $thatDay;
-                        } elseif (empty($thatDayRecords['morning']) && !empty($thatDayRecords['evening'])) {
-                            // 早上未打卡
-                            $attendanceSummary['no_record_all_morning'][] = $thatDay;
-                        } elseif (!empty($thatDayRecords['morning']) && empty($thatDayRecords['evening'])) {
-                            // 晚上未打卡
-                            $attendanceSummary['no_record_all_evening'][] = $thatDay;
-                        }
-                        // 再统计迟到情况
-                        if (!empty($thatDayRecords['morning'])) {
-                            $earliestSignDateTime = min($thatDayRecords['morning']);
-                            $earliestSignObj = Carbon::parse($earliestSignDateTime);
-                            $earliestSignTime = $earliestSignObj->format('H:i');
-                            $dayBefore = $earliestSignObj->subDay()->toDateString();
-                            $dayBeforeEveningSignTime = '17:30';
-                            if (!empty($allDayRecords[$dayBefore]['evening'])) {
-                                // 进入前一天加班迟到判断
-                                $dayBeforeEveningSignTime = Carbon::parse(max($allDayRecords[$dayBefore]['evening']))->format('H:i');
-                            }
-                            // 晚上21点之前下班不能迟到
-                            if ($dayBeforeEveningSignTime >= '17:30' && $dayBeforeEveningSignTime < '21:00') {
-                                if ($earliestSignTime > '09:00') {
-                                    if ($earliestSignTime <= '09:10') {
-                                        if ($freeLateTimes > 0) {
-                                            // 免费机会如果没用完则抵消一次
-                                            $freeLateTimes--;
-                                        } else {
-                                            // 免费机会用完则算迟到
-                                            $attendanceSummary['late_in_morning'][] = $earliestSignDateTime;
-                                        }
-                                    } else {
-                                        // 超过10分钟直接算迟到
-                                        $attendanceSummary['late_in_morning'][] = $earliestSignDateTime;
-                                    }
-                                }
-                            } elseif ($dayBeforeEveningSignTime >= '21:00' && $dayBeforeEveningSignTime < '22:00') {
-                                // 加班到晚上22点之前，次日9点半之前不算迟到
-                                if ($earliestSignTime > '09:30') {
-                                    $attendanceSummary['late_in_morning'][] = $earliestSignDateTime;
-                                }
-                            } elseif ($dayBeforeEveningSignTime >= '22:00' && $dayBeforeEveningSignTime <= '23:59') {
-                                // 加班到晚上0点之前，次日10点之前不算迟到
-                                if ($earliestSignTime > '10:00') {
-                                    $attendanceSummary['late_in_morning'][] = $earliestSignDateTime;
-                                }
-                            }
-                        }
-                        // 加班统计overtime
-                        if (!empty($thatDayRecords['evening'])) {
-                            $latestSignDateTime = max($thatDayRecords['evening']);
-                            $latestSignObj = Carbon::parse($latestSignDateTime);
-                            $latestSignTime = $latestSignObj->format('H:i');
-                            // 晚上加班19:30开始统计，起步1小时，之后以半小时为单位统计
-                            if ($latestSignTime >= '19:30' || $latestSignTime < '06:00') {
-                                // 保底1小时
-                                // 计算增量时长
-                                $overtimeBaseObj = Carbon::parse($thatDay . ' 19:30:00');
-                                $deltaHours = round($latestSignObj->diffInMinutes($overtimeBaseObj)/30)*0.5;
-                                $attendanceSummary['overtime_total'] += 1 + $deltaHours;
-                            }
-                            if ($latestSignTime >= '20:00' || $latestSignTime < '06:00') {
-                                $attendanceSummary['overtime_after_eight']++;
-                            }
-                        }
+                foreach ($singlePersonRecords as $thatDay => $thatDayObj) {
+                    $thatDayTime = $thatDayObj->format('H:i');
+                    $thatDayDateTime = $thatDayObj->toDateTimeString();
+                    // echo($thatDayTime . '|' . $thatDay . '<br>');
+                    if ($thatDayTime >= '06:00' && $thatDayTime <= '10:30') {
+                        $allDayRecords[$thatDayObj->toDateString()]['morning'][] = $thatDayDateTime;
+                    } elseif ($thatDayTime >= '17:30' && $thatDayTime <= '23:59') {
+                        $allDayRecords[$thatDayObj->toDateString()]['evening'][] = $thatDayDateTime;
+                    } elseif ($thatDayTime >= '00:00' && $thatDayTime < '06:00') {
+                        $allDayRecords[$thatDayObj->subDay()->toDateString()]['evening'][] = $thatDayDateTime;
                     }
-//                    dd($allDayRecords);
-                    dd($attendanceSummary);
                 }
 
+                $freeLateTimes = 3;
+                // 加班时间总计
+                $attendanceSummary['overtime_total'] = 0;
+                // 晚上8点后加班次数
+                $attendanceSummary['overtime_after_eight'] = 0;
+
+                foreach ($allDayRecords as $thatDay => $thatDayRecords) {
+                    // 先统计未打卡情况
+                    if (empty($thatDayRecords['morning']) && empty($thatDayRecords['evening'])) {
+                        // 全天未打卡
+                        $attendanceSummary['no_record_all_day'][] = $thatDay;
+                    } elseif (empty($thatDayRecords['morning']) && !empty($thatDayRecords['evening'])) {
+                        // 早上未打卡
+                        $attendanceSummary['no_record_all_morning'][] = $thatDay;
+                    } elseif (!empty($thatDayRecords['morning']) && empty($thatDayRecords['evening'])) {
+                        // 晚上未打卡
+                        $attendanceSummary['no_record_all_evening'][] = $thatDay;
+                    }
+                    // 再统计迟到情况
+                    if (!empty($thatDayRecords['morning'])) {
+                        $earliestSignDateTime = min($thatDayRecords['morning']);
+                        $earliestSignObj = Carbon::parse($earliestSignDateTime);
+                        $earliestSignTime = $earliestSignObj->format('H:i');
+                        $dayBefore = $earliestSignObj->subDay()->toDateString();
+                        $dayBeforeEveningSignTime = '17:30';
+                        if (!empty($allDayRecords[$dayBefore]['evening'])) {
+                            // 进入前一天加班迟到判断
+                            $dayBeforeEveningSignTime = Carbon::parse(max($allDayRecords[$dayBefore]['evening']))->format('H:i');
+                        }
+                        // 晚上21点之前下班不能迟到
+                        if ($dayBeforeEveningSignTime >= '17:30' && $dayBeforeEveningSignTime < '21:00') {
+                            if ($earliestSignTime > '09:00') {
+                                if ($earliestSignTime <= '09:10') {
+                                    if ($freeLateTimes > 0) {
+                                        // 免费机会如果没用完则抵消一次
+                                        $freeLateTimes--;
+                                    } else {
+                                        // 免费机会用完则算迟到
+                                        $attendanceSummary['late_in_morning'][] = $earliestSignDateTime;
+                                    }
+                                } else {
+                                    // 超过10分钟直接算迟到
+                                    $attendanceSummary['late_in_morning'][] = $earliestSignDateTime;
+                                }
+                            }
+                        } elseif ($dayBeforeEveningSignTime >= '21:00' && $dayBeforeEveningSignTime < '22:00') {
+                            // 加班到晚上22点之前，次日9点半之前不算迟到
+                            if ($earliestSignTime > '09:30') {
+                                $attendanceSummary['late_in_morning'][] = $earliestSignDateTime;
+                            }
+                        } elseif ($dayBeforeEveningSignTime >= '22:00' && $dayBeforeEveningSignTime <= '23:59') {
+                            // 加班到晚上0点之前，次日10点之前不算迟到
+                            if ($earliestSignTime > '10:00') {
+                                $attendanceSummary['late_in_morning'][] = $earliestSignDateTime;
+                            }
+                        }
+                    }
+                    // 加班统计overtime
+                    if (!empty($thatDayRecords['evening'])) {
+                        $latestSignDateTime = max($thatDayRecords['evening']);
+                        $latestSignObj = Carbon::parse($latestSignDateTime);
+                        $latestSignTime = $latestSignObj->format('H:i');
+                        // 晚上加班19:30开始统计，起步1小时，之后以半小时为单位统计
+                        if ($latestSignTime >= '19:30' || $latestSignTime < '06:00') {
+                            // 保底1小时
+                            // 计算增量时长
+                            $overtimeBaseObj = Carbon::parse($thatDay . ' 19:30:00');
+                            $deltaHours = round($latestSignObj->diffInMinutes($overtimeBaseObj)/30)*0.5;
+                            $attendanceSummary['overtime_total'] += 1 + $deltaHours;
+                        }
+                        if ($latestSignTime >= '20:00' || $latestSignTime < '06:00') {
+                            $attendanceSummary['overtime_after_eight']++;
+                        }
+                    }
+                }
+                // dd($allDayRecords);
+                // dd($attendanceSummary);
+
+                $notes = [];
+                if (!empty($attendanceSummary['overtime_after_eight'])) {
+                    $notes[] = '加班8点后: ' . $attendanceSummary['overtime_after_eight'] . '次';
+                }
+                if (!empty($attendanceSummary['overtime_total'])) {
+                    $notes[] = '加班总时长: ' . $attendanceSummary['overtime_total'] . '小时';
+                }
+                if (!empty($attendanceSummary['late_in_morning'])) {
+                    $notes[] = '迟到' . count($attendanceSummary['late_in_morning']) . '次: ' . implode(',', $attendanceSummary['late_in_morning']);
+                }
+                if (!empty($attendanceSummary['no_record_all_day'])) {
+                    $notes[] = '全天无打卡' . count($attendanceSummary['no_record_all_day']) . '次: ' . implode(',', $attendanceSummary['no_record_all_day']);
+                }
+                if (!empty($attendanceSummary['no_record_all_morning'])) {
+                    $notes[] = '早上无打卡' . count($attendanceSummary['no_record_all_morning']) . '次: ' . implode(',', $attendanceSummary['no_record_all_morning']);
+                }
+                if (!empty($attendanceSummary['no_record_all_evening'])) {
+                    $notes[] = '晚上无打卡' . count($attendanceSummary['no_record_all_evening']) . '次: ' . implode(',', $attendanceSummary['no_record_all_evening']);
+                }
+                // dd($employee);
+
+                $employee['attendanceNotes'] = implode('; ', $notes);
                 $employee['attendanceSummary'] = $attendanceSummary;
+
+                $cellData[] = [
+                    $employee['department'], $employee['name'], count($attendanceSummary['late_in_morning']),
+                    '', '', '', '', '', '', '', '', '', '', count($allDayRecords),
+                    '', $employee['attendanceNotes']];
+
+                // if ($attendanceID == 149)
+                //     dd($employee);
             }
-            // dd($attendanceRecords);
-            dd($employees);
+           Excel::create('考勤统计',function($excel) use ($cellData) {
+               $excel->sheet('考勤统计', function($sheet) use ($cellData) {
+                   $sheet->rows($cellData);
+               });
+           })->export('xls');
             // $reader->each(function($sheet) use (&$attendance) {
             //     $sheet->each(function($row) use (&$attendance) {
             //         //$attendance[]
